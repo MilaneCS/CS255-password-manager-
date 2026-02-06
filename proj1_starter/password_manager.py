@@ -22,6 +22,7 @@ class Keychain:
     def __init__(
         self,
         ########## START CODE HERE ##########
+        keychain_password: str,
         ########### END CODE HERE ###########
     ):
         """
@@ -36,19 +37,23 @@ class Keychain:
         """
         ########## START CODE HERE ##########
         self.data = {
+            salt: get_random_bytes(16),
             # Store member variables that you intend to be public here
             # (i.e. information that will not compromise security if an adversary sees).
             # This data should be dumped by the Keychain.dump function.
             # You should store the key-value store (KVS) in the "kvs" item in this dictionary.
             "kvs": None,
         }
+        keychain_password_holder = PBKDF2(keychain_password, self.data["salt"], 32, count=PBKDF2_ITERATIONS, hmac_hash_module=SHA256)
+        dom_key = HMAC.new(keychain_password_holder, b"domain",digestmod=SHA256).digest()
+        enc_key = HMAC.new(keychain_password_holder, b"encryption",digestmod=SHA256).digest()
+            
         self.secrets = {
+            "dom_key": dom_key,
+            "enc_key": enc_key,
             # Store member variables that you intend to be private here
             # (information that an adversary should NOT see).
         }
-        raise NotImplementedError(
-            "Delete this line once you've implemented the Keychain constructor (__init__)"
-        )
         ########### END CODE HERE ###########
 
     ########## START CODE HERE ##########
@@ -67,7 +72,7 @@ class Keychain:
             A Keychain instance
         """
         ########## START CODE HERE ##########
-        raise NotImplementedError("Delete this line once you've implemented Keychain.new")
+        return Keychain(keychain_password)
         ########### END CODE HERE ###########
 
     @staticmethod
