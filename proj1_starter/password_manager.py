@@ -164,9 +164,34 @@ class Keychain:
             or None if it does not exist
         """
         ########## START CODE HERE ##########
-        raise NotImplementedError(
-            "Delete this line once you've implemented Keychain.get"
+        # There are no entries if KVS is uninitialized
+        if self.data["kvs"] is None:
+            return None
+
+        # Compute the deterministic HMAC-derived key for the domain.
+        domain_key = HMAC.new(
+            self.secrets["dom_key"],
+            str_to_bytes(domain),
+            digestmod=SHA256,
+        ).digest()
+
+        # Lookup the stored record.
+        record = self.data["kvs"].get(encode_bytes(domain_key))
+        if record is None:
+            return None
+
+        # Recreate the cipher using the stored nonce and the
+        # encryption key, then decrypt and verify the ciphertext.
+        cipher = AES.new(
+            self.secrets["enc_key"],
+            AES.MODE_GCM,
+            nonce=decode_bytes(record["nonce"]),
         )
+        plaintext = cipher.decrypt_and_verify(
+            decode_bytes(record["ct"]),
+            decode_bytes(record["tag"]),
+        )
+        return bytes_to_str(plaintext)
         ########### END CODE HERE ###########
 
     def set(self, domain: str, password: str):
@@ -181,9 +206,29 @@ class Keychain:
             password: the password for the provided domain
         """
         ########## START CODE HERE ##########
-        raise NotImplementedError(
-            "Delete this line once you've implemented Keychain.set"
-        )
+        # Initialize on first use.
+        if self.data["kvs"] is None:
+            self.data["kvs"] = {}
+
+        # Derive a deterministic HMAC key for the domain so the KVS
+        # stores no plaintext domain names and lookups remain stable.
+        domain_key = HMAC.new(
+            self.secrets["dom_key"],
+            str_to_bytes(domain),
+            digestmod=SHA256,
+        ).digest()
+
+        # Create an AES-GCM cipher with the encryption key and encrypt
+        # the password
+        cipher = AES.new(self.secrets["enc_key"], AES.MODE_GCM)
+        ciphertext, tag = cipher.encrypt_and_digest(str_to_bytes(password))
+
+        # Store the record using encoded byte-strings for portability
+        self.data["kvs"][encode_bytes(domain_key)] = {
+            "nonce": encode_bytes(cipher.nonce),
+            "ct": encode_bytes(ciphertext),
+            "tag": encode_bytes(tag),
+        }
         ########### END CODE HERE ###########
 
     def remove(self, domain: str) -> bool:

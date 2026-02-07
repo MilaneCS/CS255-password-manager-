@@ -123,9 +123,11 @@ class TestAutogradability:
         contents, _ = keychain.dump()
         contents_dict = json_str_to_dict(contents)
         assert 'kvs' in contents_dict, \
-            "The JSON object returned by Keychain.dump does not contain a 'kvs' key"
+            "The JSON object returned by Keychain.dump does not contain a 'kvs'\
+                key"
         assert isinstance(contents_dict['kvs'], dict), \
-            "The 'kvs' attribute of the JSON object returned by Keychain.dump must be a dict"
+            "The 'kvs' attribute of the JSON object returned by Keychain.dump \
+                must be a dict"
         assert len(contents_dict['kvs']) == len(KVS), \
-            "The KVS in the JSON object returned by Keychain.dump does not contain the \
-                correct number of domain/password pairs"
+            "The KVS in the JSON object returned by Keychain.dump does not \
+                contain the correct number of domain/password pairs"
