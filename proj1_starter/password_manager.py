@@ -147,9 +147,19 @@ class Keychain:
             serialization
         """
         ########## START CODE HERE ##########
-        raise NotImplementedError(
-            "Delete this line once you've implemented Keychain.dump"
-        )
+        # Build a JSON-safe public snapshot
+        public_state = {
+            "salt": encode_bytes(self.data["salt"]),
+            "kvs": self.data["kvs"] if self.data["kvs"] is not None else {},
+        }
+
+        # Serialize to stay consistent with the starter API.
+        repr_str = dict_to_json_str(public_state)
+
+        # Return SHA-256 over the serialized representation so callers can
+        # verify integrity during load.
+        checksum = SHA256.new(str_to_bytes(repr_str)).digest()
+        return repr_str, checksum
         ########### END CODE HERE ###########
 
     def get(self, domain: str) -> Optional[str]:
@@ -169,14 +179,14 @@ class Keychain:
             return None
 
         # Compute the deterministic HMAC-derived key for the domain.
-        domain_key = HMAC.new(
+        dom_key = HMAC.new(
             self.secrets["dom_key"],
             str_to_bytes(domain),
             digestmod=SHA256,
         ).digest()
 
         # Lookup the stored record.
-        record = self.data["kvs"].get(encode_bytes(domain_key))
+        record = self.data["kvs"].get(encode_bytes(dom_key))
         if record is None:
             return None
 
@@ -212,7 +222,7 @@ class Keychain:
 
         # Derive a deterministic HMAC key for the domain so the KVS
         # stores no plaintext domain names and lookups remain stable.
-        domain_key = HMAC.new(
+        dom_key = HMAC.new(
             self.secrets["dom_key"],
             str_to_bytes(domain),
             digestmod=SHA256,
@@ -224,7 +234,7 @@ class Keychain:
         ciphertext, tag = cipher.encrypt_and_digest(str_to_bytes(password))
 
         # Store the record using encoded byte-strings for portability
-        self.data["kvs"][encode_bytes(domain_key)] = {
+        self.data["kvs"][encode_bytes(dom_key)] = {
             "nonce": encode_bytes(cipher.nonce),
             "ct": encode_bytes(ciphertext),
             "tag": encode_bytes(tag),
