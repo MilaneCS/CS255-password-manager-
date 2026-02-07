@@ -154,12 +154,12 @@ class Keychain:
         }
 
         # Serialize to stay consistent with the starter API.
-        repr_str = dict_to_json_str(public_state)
+        rep_str = dict_to_json_str(public_state)
 
         # Return SHA-256 over the serialized representation so callers can
         # verify integrity during load.
-        checksum = SHA256.new(str_to_bytes(repr_str)).digest()
-        return repr_str, checksum
+        checksum = SHA256.new(str_to_bytes(rep_str)).digest()
+        return rep_str, checksum
         ########### END CODE HERE ###########
 
     def get(self, domain: str) -> Optional[str]:
@@ -175,8 +175,7 @@ class Keychain:
         """
         ########## START CODE HERE ##########
         # There are no entries if KVS is uninitialized
-        if self.data["kvs"] is None:
-            return None
+        if self.data["kvs"] is None: return None
 
         # Compute the deterministic HMAC-derived key for the domain.
         dom_key = HMAC.new(
@@ -187,8 +186,7 @@ class Keychain:
 
         # Lookup the stored record.
         record = self.data["kvs"].get(encode_bytes(dom_key))
-        if record is None:
-            return None
+        if record is None: return None
 
         # Recreate the cipher using the stored nonce and the
         # encryption key, then decrypt and verify the ciphertext.
@@ -217,8 +215,7 @@ class Keychain:
         """
         ########## START CODE HERE ##########
         # Initialize on first use.
-        if self.data["kvs"] is None:
-            self.data["kvs"] = {}
+        if self.data["kvs"] is None: self.data["kvs"] = {}
 
         # Derive a deterministic HMAC key for the domain so the KVS
         # stores no plaintext domain names and lookups remain stable.
