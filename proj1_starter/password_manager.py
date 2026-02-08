@@ -256,7 +256,16 @@ class Keychain:
             False otherwise
         """
         ########## START CODE HERE ##########
-        raise NotImplementedError(
-            "Delete this line once you've implemented Keychain.remove"
-        )
+        if self.data["kvs"] is None: return False
+
+        # Derive the same deterministic key used when storing the domain.
+        dom_key = HMAC.new(self.secrets["dom_key"], str_to_bytes(domain), 
+                           digestmod=SHA256).digest()
+        encoded_dom_key = encode_bytes(dom_key)
+
+        # Delete and return True only when the entry exists.
+        if encoded_dom_key in self.data["kvs"]:
+            del self.data["kvs"][encoded_dom_key]
+            return True
+        return False
         ########### END CODE HERE ###########
