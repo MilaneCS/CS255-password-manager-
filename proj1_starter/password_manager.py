@@ -67,7 +67,40 @@ class Keychain:
 
     ########## START CODE HERE ##########
     # Add any helper functions you may want to add here
-
+    def key_domain(self, domain: str) -> str:
+        tag = HMAC.new(self.secrets["dom_key"], str_to_bytes(domain), 
+                       digestmod=SHA256).digest()
+        return encode_bytes(tag)
+    
+    #############################################
+    # Password padding and unpadding functions
+    def pad_pw(self, pw: str) -> bytes:
+        b = str_to_bytes(pw)
+        if len(b) > MAX_PASSWORD_LENGTH:
+            raise ValueError("Password too long")
+        # length prefix + padding to fixed size
+        return len(b).to_bytes(1, "big") + b + b"\x00" * (MAX_PASSWORD_LENGTH 
+                                                          - len(b))
+    def unpad_pw(self, padded: bytes) -> str:
+        L = padded[0]
+        return bytes_to_str(padded[1:1+L])
+    #############################################
+    # Encrypt & decrypt record with swap protection. Bind domain to cyphertext. 
+    def encrypt_pw(self, domain: str, pw: str) -> dict:
+        cipher = AES.new(self.secrets["enc_key"], AES.MODE_GCM)
+        cipher.update(str_to_bytes(domain))  # binds record to domain
+        ct, tag = cipher.encrypt_and_digest(self.pad_pw(pw))
+        return {"nonce": encode_bytes(cipher.nonce), "ct": encode_bytes(ct), 
+                "tag": encode_bytes(tag)}
+    
+    def decrypt_pw(self, domain: str, rec: dict) -> str:
+        cipher = AES.new(self.secrets["enc_key"], AES.MODE_GCM, 
+                         nonce=decode_bytes(rec["nonce"]))
+        cipher.update(str_to_bytes(domain))
+        pt = cipher.decrypt_and_verify(decode_bytes(rec["ct"]), 
+                                       decode_bytes(rec["tag"]))
+        return self.unpad_pw(pt)
+    #############################################
     ########### END CODE HERE ###########
 
     @staticmethod
@@ -191,22 +224,14 @@ class Keychain:
             or None if it does not exist
         """
         ########## START CODE HERE ##########
-
-        dom_key = HMAC.new(self.secrets["dom_key"], str_to_bytes(domain),
-            digestmod=SHA256).digest()
-        
-        record = self.data["kvs"].get(encode_bytes(dom_key))
-        if record is None: return None
-
-        # Recreate the cipher using the stored nonce and the encryption key, 
-        # then decrypt and verify the ciphertext.
-        cipher = AES.new(self.secrets["enc_key"], AES.MODE_GCM, 
-                         nonce=decode_bytes(record["nonce"]),
-        )
-        plaintext = cipher.decrypt_and_verify(decode_bytes(record["ct"]), 
-                                              decode_bytes(record["tag"]),
-        )
-        return bytes_to_str(plaintext)
+        # Look up the encrypted record using the HMAC-derived domain key.
+        # If found, decrypt it while binding the domain as associated data.
+        # This ensures swapped records fail authentication.
+        dom_key = self.key_domain(domain)
+        record = self.data["kvs"].get(dom_key)
+        if record is None:
+            return None
+        return self.decrypt_pw(domain, record)
         ########### END CODE HERE ###########
 
     def set(self, domain: str, password: str):
@@ -221,19 +246,10 @@ class Keychain:
             password: the password for the provided domain
         """
         ########## START CODE HERE ##########
-        dom_key = HMAC.new(self.secrets["dom_key"], str_to_bytes(domain), 
-                           digestmod=SHA256).digest()
-
+        dom_key = self.key_domain(domain)
         # Create an AES-GCM cipher with the encryption key and encrypt password
-        cipher = AES.new(self.secrets["enc_key"], AES.MODE_GCM)
-        ciphertext, tag = cipher.encrypt_and_digest(str_to_bytes(password))
-
-        # Store the record using encoded byte-strings for portability
-        self.data["kvs"][encode_bytes(dom_key)] = {
-            "nonce": encode_bytes(cipher.nonce),
-            "ct": encode_bytes(ciphertext),
-            "tag": encode_bytes(tag),
-        }
+        record = self.encrypt_pw(domain, password)
+        self.data["kvs"][dom_key] = record
         ########### END CODE HERE ###########
 
     def remove(self, domain: str) -> bool:
