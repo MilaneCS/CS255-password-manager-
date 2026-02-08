@@ -15,20 +15,25 @@ MAX_PASSWORD_LENGTH = 64
 
 ########## START CODE HERE ##########
 # Add any extra constants you may need
+PASSWORD_CHECK_CONTEXT = b"keychain-password-check"
 ########### END CODE HERE ###########
 
 
 class Keychain:
     def __init__(
-        self,
         ########## START CODE HERE ##########
-        keychain_password: str,
+        self, keychain_password: str, *, salt: Optional[bytes] = None, 
+        kvs: Optional[dict] = None
         ########### END CODE HERE ###########
     ):
         """
         Initializes the keychain using the provided information. Note that 
         external users should likely never invoke the constructor directly and 
         instead use either Keychain.new or Keychain.load.
+
+        If salt and kvs are provided, the keychain is restored deterministically
+        from persisted state. Otherwise, fresh random state is created for a new
+        keychain.
 
         Args:
             You may design the constructor with any additional arguments you 
@@ -37,40 +42,27 @@ class Keychain:
             None
         """
         ########## START CODE HERE ##########
+        if salt is None: salt = get_random_bytes(16)
+        if kvs is None: kvs = {}
+
         self.data = {
-            "salt": get_random_bytes(16),
             # Store member variables that you intend to be public here
             # (i.e. information that will not compromise security if an 
             # adversary sees).
             # This data should be dumped by the Keychain.dump function.
             # You should store the key-value store (KVS) in the "kvs" item in 
             # this dictionary.
-            "kvs": None,
+            "salt": salt,
+            "kvs": kvs,
         }
-        keychain_password_holder = PBKDF2(
-            keychain_password,
-            self.data["salt"],
-            32,
-            count=PBKDF2_ITERATIONS,
-            hmac_hash_module=SHA256
-        )
-        dom_key = HMAC.new(
-            keychain_password_holder,
-            b"domain",
-            digestmod=SHA256
-        ).digest()
-        enc_key = HMAC.new(
-            keychain_password_holder,
-            b"encryption",
-            digestmod=SHA256
-        ).digest()
-            
-        self.secrets = {
-            "dom_key": dom_key,
-            "enc_key": enc_key,
-            # Store member variables that you intend to be private here
-            # (information that an adversary should NOT see).
-        }
+        master = PBKDF2(keychain_password, self.data["salt"], 32, 
+                        count=PBKDF2_ITERATIONS, hmac_hash_module=SHA256)
+        dom_key = HMAC.new(master, b"domain", digestmod=SHA256).digest()
+        enc_key = HMAC.new(master, b"encryption", digestmod=SHA256).digest()
+        
+        # Store member variables that you intend to be private here
+        # (information that an adversary should NOT see).
+        self.secrets = {"dom_key": dom_key, "enc_key": enc_key}
         ########### END CODE HERE ###########
 
     ########## START CODE HERE ##########
@@ -123,9 +115,32 @@ class Keychain:
                 HMAC.verify)
         """
         ########## START CODE HERE ##########
-        raise NotImplementedError(
-            "Delete this line once you've implemented Keychain.load"
-        )
+        # If a trusted checksum is provided, recompute the checksum and reject
+        # if it has been modified.
+        if trusted_data_check is not None:
+            computed_check = SHA256.new(str_to_bytes(repr)).digest()
+            if computed_check != trusted_data_check:
+                raise ValueError("Checksum verification failed")
+            
+        serialized = json_str_to_dict(repr)
+        # Load the stored salt to re-derive keys from the password.
+        salt = decode_bytes(serialized["salt"])
+
+        # Normalize the key-value store to a dictionary.
+        kvs = serialized.get("kvs")
+        if kvs is None: kvs = {}
+
+        # Restore persisted state through __init__.
+        keychain = Keychain(keychain_password, salt=salt, kvs=kvs)
+
+        # Verify correctness using persisted HMAC marker when available.
+        # HMAC.verify raises ValueError on mismatch.
+        if "pw_check" in serialized:
+            verifier = HMAC.new(keychain.secrets["dom_key"], 
+                                PASSWORD_CHECK_CONTEXT, digestmod=SHA256)
+            verifier.verify(decode_bytes(serialized["pw_check"]))
+
+        return keychain
         ########### END CODE HERE ###########
 
     def dump(self) -> Tuple[str, bytes]:
@@ -151,13 +166,16 @@ class Keychain:
         public_state = {
             "salt": encode_bytes(self.data["salt"]),
             "kvs": self.data["kvs"] if self.data["kvs"] is not None else {},
+            # Add a password-verification marker so load can reject an
+            # incorrect keychain password even for an empty KVS.
+            "pw_check": encode_bytes(
+                HMAC.new(self.secrets["dom_key"], PASSWORD_CHECK_CONTEXT,
+                    digestmod=SHA256).digest()
+            ),
         }
 
         # Serialize to stay consistent with the starter API.
         rep_str = dict_to_json_str(public_state)
-
-        # Return SHA-256 over the serialized representation so callers can
-        # verify integrity during load.
         checksum = SHA256.new(str_to_bytes(rep_str)).digest()
         return rep_str, checksum
         ########### END CODE HERE ###########
@@ -177,27 +195,19 @@ class Keychain:
         # There are no entries if KVS is uninitialized
         if self.data["kvs"] is None: return None
 
-        # Compute the deterministic HMAC-derived key for the domain.
-        dom_key = HMAC.new(
-            self.secrets["dom_key"],
-            str_to_bytes(domain),
-            digestmod=SHA256,
-        ).digest()
-
-        # Lookup the stored record.
+        dom_key = HMAC.new(self.secrets["dom_key"], str_to_bytes(domain),
+            digestmod=SHA256).digest()
+        
         record = self.data["kvs"].get(encode_bytes(dom_key))
         if record is None: return None
 
-        # Recreate the cipher using the stored nonce and the
-        # encryption key, then decrypt and verify the ciphertext.
-        cipher = AES.new(
-            self.secrets["enc_key"],
-            AES.MODE_GCM,
-            nonce=decode_bytes(record["nonce"]),
+        # Recreate the cipher using the stored nonce and the encryption key, 
+        # then decrypt and verify the ciphertext.
+        cipher = AES.new(self.secrets["enc_key"], AES.MODE_GCM, 
+                         nonce=decode_bytes(record["nonce"]),
         )
-        plaintext = cipher.decrypt_and_verify(
-            decode_bytes(record["ct"]),
-            decode_bytes(record["tag"]),
+        plaintext = cipher.decrypt_and_verify(decode_bytes(record["ct"]), 
+                                              decode_bytes(record["tag"]),
         )
         return bytes_to_str(plaintext)
         ########### END CODE HERE ###########
@@ -217,16 +227,10 @@ class Keychain:
         # Initialize on first use.
         if self.data["kvs"] is None: self.data["kvs"] = {}
 
-        # Derive a deterministic HMAC key for the domain so the KVS
-        # stores no plaintext domain names and lookups remain stable.
-        dom_key = HMAC.new(
-            self.secrets["dom_key"],
-            str_to_bytes(domain),
-            digestmod=SHA256,
-        ).digest()
+        dom_key = HMAC.new(self.secrets["dom_key"], str_to_bytes(domain), 
+                           digestmod=SHA256).digest()
 
-        # Create an AES-GCM cipher with the encryption key and encrypt
-        # the password
+        # Create an AES-GCM cipher with the encryption key and encrypt password
         cipher = AES.new(self.secrets["enc_key"], AES.MODE_GCM)
         ciphertext, tag = cipher.encrypt_and_digest(str_to_bytes(password))
 
