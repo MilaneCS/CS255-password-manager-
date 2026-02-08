@@ -149,27 +149,29 @@ class Keychain:
         """
         ########## START CODE HERE ##########
         # If a trusted checksum is provided, recompute the checksum and reject
-        # if it has been modified.
+        # the representation if it has been modified (rollback defense).
         if trusted_data_check is not None:
             computed_check = SHA256.new(str_to_bytes(repr)).digest()
             if computed_check != trusted_data_check:
                 raise ValueError("Checksum verification failed")
-            
-        serialized = json_str_to_dict(repr)
-        # Load the stored salt to re-derive keys from the password.
-        salt = decode_bytes(serialized["salt"])
 
-        # Normalize the key-value store to a dictionary.
+        serialized = json_str_to_dict(repr)
+
+        # Load the stored salt and KVS from the serialized representation.
+        salt = decode_bytes(serialized["salt"])
         kvs = serialized.get("kvs")
 
-        # Restore persisted state through __init__.
+        # Restore persisted public state and re-derive secret keys from password
         keychain = Keychain(keychain_password, salt=salt, kvs=kvs)
 
-        # Verify correctness using persisted HMAC marker when available.
+        # Verify the provided password when the marker is available.
         # HMAC.verify raises ValueError on mismatch.
         if "pw_check" in serialized:
-            verifier = HMAC.new(keychain.secrets["dom_key"], 
-                                PASSWORD_CHECK_CONTEXT, digestmod=SHA256)
+            verifier = HMAC.new(
+                keychain.secrets["dom_key"],
+                PASSWORD_CHECK_CONTEXT,
+                digestmod=SHA256,
+            )
             verifier.verify(decode_bytes(serialized["pw_check"]))
 
         return keychain
@@ -194,7 +196,8 @@ class Keychain:
             serialization
         """
         ########## START CODE HERE ##########
-        # Build a JSON-safe public snapshot
+        # Build a JSON-safe public snapshot.  This includes the
+        # salt and the encrypted key-value store, but no secret keys.
         public_state = {
             "salt": encode_bytes(self.data["salt"]),
             "kvs": self.data["kvs"],
@@ -206,7 +209,8 @@ class Keychain:
             ),
         }
 
-        # Serialize to stay consistent with the starter API.
+        # Serialize the public state and compute a checksum for rollback 
+        # detection.
         rep_str = dict_to_json_str(public_state)
         checksum = SHA256.new(str_to_bytes(rep_str)).digest()
         return rep_str, checksum
@@ -246,8 +250,10 @@ class Keychain:
             password: the password for the provided domain
         """
         ########## START CODE HERE ##########
+        # Derive the HMAC-based lookup key for the domain then encrypt and store
+        # the password while binding the domain as associated data; this ensures
+        # records cannot be swapped between domains without detection.
         dom_key = self.key_domain(domain)
-        # Create an AES-GCM cipher with the encryption key and encrypt password
         record = self.encrypt_pw(domain, password)
         self.data["kvs"][dom_key] = record
         ########### END CODE HERE ###########
@@ -266,14 +272,11 @@ class Keychain:
             False otherwise
         """
         ########## START CODE HERE ##########
-        # Derive the same deterministic key used when storing the domain.
-        dom_key = HMAC.new(self.secrets["dom_key"], str_to_bytes(domain), 
-                           digestmod=SHA256).digest()
-        encoded_dom_key = encode_bytes(dom_key)
+        # Derive the same HMAC-based lookup key used by set and get.
+        dom_key = self.key_domain(domain)
 
-        # Delete and return True only when the entry exists.
-        if encoded_dom_key in self.data["kvs"]:
-            del self.data["kvs"][encoded_dom_key]
+        if dom_key in self.data["kvs"]:
+            del self.data["kvs"][dom_key]
             return True
         return False
         ########### END CODE HERE ###########
