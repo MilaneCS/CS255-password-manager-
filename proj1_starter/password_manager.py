@@ -128,7 +128,6 @@ class Keychain:
 
         # Normalize the key-value store to a dictionary.
         kvs = serialized.get("kvs")
-        if kvs is None: kvs = {}
 
         # Restore persisted state through __init__.
         keychain = Keychain(keychain_password, salt=salt, kvs=kvs)
@@ -165,7 +164,7 @@ class Keychain:
         # Build a JSON-safe public snapshot
         public_state = {
             "salt": encode_bytes(self.data["salt"]),
-            "kvs": self.data["kvs"] if self.data["kvs"] is not None else {},
+            "kvs": self.data["kvs"],
             # Add a password-verification marker so load can reject an
             # incorrect keychain password even for an empty KVS.
             "pw_check": encode_bytes(
@@ -192,8 +191,6 @@ class Keychain:
             or None if it does not exist
         """
         ########## START CODE HERE ##########
-        # There are no entries if KVS is uninitialized
-        if self.data["kvs"] is None: return None
 
         dom_key = HMAC.new(self.secrets["dom_key"], str_to_bytes(domain),
             digestmod=SHA256).digest()
@@ -224,9 +221,6 @@ class Keychain:
             password: the password for the provided domain
         """
         ########## START CODE HERE ##########
-        # Initialize on first use.
-        if self.data["kvs"] is None: self.data["kvs"] = {}
-
         dom_key = HMAC.new(self.secrets["dom_key"], str_to_bytes(domain), 
                            digestmod=SHA256).digest()
 
@@ -256,8 +250,6 @@ class Keychain:
             False otherwise
         """
         ########## START CODE HERE ##########
-        if self.data["kvs"] is None: return False
-
         # Derive the same deterministic key used when storing the domain.
         dom_key = HMAC.new(self.secrets["dom_key"], str_to_bytes(domain), 
                            digestmod=SHA256).digest()
