@@ -7,20 +7,18 @@ To prevent the adversary from learning information regarding the length of our p
 
 2. Briefly describe your method for preventing swap attacks (Section 2.2). Provide an argument
 for why the attack is prevented in your scheme.
-In our implementation of the password manager, we go ahead and bind every cipher text to the domain
-of the domain in question. So for example, if we are looking for the cipher text around evil.com, 
-then we will bind the encryption of evil.com to its own domain.
-When we decrypt, we will also use that same domain to decrypt it, but if it fails the decryption
-then we will go ahead and realize it is a swap attack. This prevents a swap attack because an attacker
-can go ahead and swap any two entries, but since we've encrypted every ciphertext with the domain provided,
-decryption will fail if the wrong domain is provided.
-
+To prevent swap attacks, our password manager cryptographically binds each ciphertext to its
+associated domain. When encrypting a password for a domain 𝑑 (e.g., evil.com), the domain is 
+incorporated into the encryption (e.g., as associated data). During retrieval, decryption is 
+performed using the same domain. If a ciphertext is swapped with one from a different domain, 
+decryption fails. Thus, even if an attacker swaps two stored entries, the mismatch between the 
+ciphertext and the provided domain will be detected, preventing the attack.
 
 3. In our proposed defense against the rollback attack (Section 2.2), we assume that we can store
 the SHA-256 hash in a trusted location beyond the reach of an adversary. Is it necessary to
 assume that such a trusted location exists, in order to defend against rollback attacks? Briefly
 justify your answer.
-Yes. If the checksum were stored in the same (untrusted) place as the dump, an adversary could
+Yes. If the checksum were stored in the same untrusted place as the dump, an adversary could
 perform a consistent rollback: replace both the keychain dump and the checksum with older
 versions. The old dump would then verify against the old checksum, and the rollback would
 succeed. The defense only works because the trusted location holds the checksum for the latest
@@ -32,10 +30,14 @@ times with the same input), we were able to look up domain names using their HMA
 There are also randomized MACs, which can output different tags on multiple runs with the
 same input. Explain how you would do the look up if you had to use a randomized MAC
 instead of HMAC. Is there a performance penalty involved, and if so, what?
-Using a random MAC would make this extremely hard, as you would not have O(1) lookup anymore.
-This would make it very hard to have a key or domain to key because the output will not be the
-26. In this case, you would have to run the program multiple times to see if one of the outputs
-matches what you have stored. This will make the program open because you would run the program over n times to confirm that this is not inside the database.
+
+Using a randomized MAC makes lookup significantly harder because we lose deterministic tags and therefore lose 
+O(1) lookup. Since the same domain can produce different MAC outputs each time, we can no longer directly index entries
+by their MAC value. Instead, to look up a domain, we would need to iterate over all stored entries and verify the randomized 
+MAC for each one until a match is found. This means each lookup would take O(n) time rather than O(1).
+This is a major performance decrease, since get is a core operation that many other functions rely on 
+and is expected to be fast and frequently used.
+
 5. In our specification, we leak the number of records in the password manager. Describe an
 approach to reduce the information leaked about the number of records. Specifically, if there
 are k records, your scheme should only leak ⌊log2 (k)⌋ (that is, if k1 and k2 are such that 
@@ -47,3 +49,10 @@ system without compromising security for other sites that these users may wish t
 passwords of? That is, if Alice and Bob wish to access one stored password (say for nytimes)
 that either of them can get and update, without allowing the other to access their passwords
 for other websites.
+
+In my opinion, one way to add multi-user support is to give each user their own master key,
+while allowing shared sites to be encrypted under a shared key. For example, Alice and Bob 
+can agree on a shared encryption key for nytimes, and that key is then encrypted separately 
+under Alice’s key and Bob’s key. The actual password for nytimes is stored once, encrypted with the shared key.
+This way, both Alice and Bob can decrypt and update the nytimes password using their own credentials, but 
+neither can access the other’s passwords for unrelated websites, since those are encrypted under different keys.
