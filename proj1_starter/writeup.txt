@@ -1,11 +1,19 @@
 1. Briefly describe your method for preventing the adversary from learning information about
 the lengths of the passwords stored in your password manager.
-
-
+To prevent the adversary from learning information regarding the length of our passwords,
+ we added additional padding so all passwords would be the same size. We would pad these 
+ passwords up to the maximum size given by the specs sheet.
 
 
 2. Briefly describe your method for preventing swap attacks (Section 2.2). Provide an argument
 for why the attack is prevented in your scheme.
+In our implementation of the password manager, we go ahead and bind every cipher text to the domain
+of the domain in question. So for example, if we are looking for the cipher text around evil.com, 
+then we will bind the encryption of evil.com to its own domain.
+When we decrypt, we will also use that same domain to decrypt it, but if it fails the decryption
+then we will go ahead and realize it is a swap attack. This prevents a swap attack because an attacker
+can go ahead and swap any two entries, but since we've encrypted every ciphertext with the domain provided,
+decryption will fail if the wrong domain is provided.
 
 
 3. In our proposed defense against the rollback attack (Section 2.2), we assume that we can store
