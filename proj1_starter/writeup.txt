@@ -1,31 +1,34 @@
 1. Briefly describe your method for preventing the adversary from learning
 information about the lengths of the passwords stored in your password manager.
+
 To prevent the adversary from learning information regarding the length of our
 passwords, we added additional padding so all passwords would be the same size.
 We would pad these passwords up to the maximum size given by the specs sheet.
 
-
 2. Briefly describe your method for preventing swap attacks (Section 2.2).
-Provide an argument for why the attack is prevented in your scheme. To prevent
-swap attacks, our password manager cryptographically binds each ciphertext to
-its associated domain. When encrypting a password for a domain 𝑑 (e.g.,
-evil.com), the domain is incorporated into the encryption (e.g., as associated
-data). During retrieval, decryption is performed using the same domain. If a
-ciphertext is swapped with one from a different domain, decryption fails. Thus,
-even if an attacker swaps two stored entries, the mismatch between the
-ciphertext and the provided domain will be detected, preventing the attack.
+Provide an argument for why the attack is prevented in your scheme. 
+
+To prevent swap attacks, our password manager cryptographically binds each
+ciphertext to its associated domain. When encrypting a password for a domain
+𝑑 (e.g., evil.com), the domain is incorporated into the encryption (e.g., as
+associated data). During retrieval, decryption is performed using the same
+domain. If a ciphertext is swapped with one from a different domain,
+decryption fails. Thus, even if an attacker swaps two stored entries, the
+mismatch between the ciphertext and the provided domain will be detected,
+preventing the attack.
 
 3. In our proposed defense against the rollback attack (Section 2.2), we assume
 that we can store the SHA-256 hash in a trusted location beyond the reach of an
 adversary. Is it necessary to assume that such a trusted location exists, in
-order to defend against rollback attacks? Briefly justify your answer. Yes. If
-the checksum were stored in the same untrusted place as the dump, an adversary
-could perform a consistent rollback: replace both the keychain dump and the
-checksum with older versions. The old dump would then verify against the old
-checksum, and the rollback would succeed. The defense only works because the
-trusted location holds the checksum for the latest state; the adversary cannot
-update that checksum when they substitute an older dump, so the verification
-fails and the rollback is detected.
+order to defend against rollback attacks? Briefly justify your answer. 
+
+Yes. If the checksum were stored in the same untrusted place as the dump, an
+adversary could perform a consistent rollback: replace both the keychain dump
+and the checksum with older versions. The old dump would then verify against
+the old checksum, and the rollback would succeed. The defense only works
+because the trusted location holds the checksum for the latest state; the
+adversary cannot update that checksum when they substitute an older dump, so
+the verification fails and the rollback is detected.
 
 4. Because HMAC is a deterministic MAC (that is, its output is the same if it is
 run multiple times with the same input), we were able to look up domain names
@@ -49,6 +52,16 @@ records. Specifically, if there are k records, your scheme should only leak
 ⌊log2 (k)⌋ (that is, if k1 and k2 are such that ⌊log2(k1)⌋ = ⌊log2(k2)⌋, the
 attacker should not be able to distinguish between a case where the true number
 of records is k1 and another case where the true number of records is k2).
+
+The password manager can pad the database with dummy entries so that the total
+number of stored records is always a power of two. If the true number of real
+records is k, the manager stores enough additional dummy records to bring the
+total up to the next power of two (for example, if k is between 8 and 15, it
+stores 16 total records). Dummy records are made indistinguishable from real
+records by using pseudo-random domain keys and storing valid-looking encrypted
+password records of the same fixed length as real entries. As a result, an
+attacker only learns which power of two range k falls into and can't distinguish
+between any two values of k within the same range.
 
 6. What is a way we can add multi-user support for specific sites to our
 password manager system without compromising security for other sites that these
